@@ -115,6 +115,9 @@ pub fn daemonize(no_daemonize: bool) -> anyhow::Result<Option<StartupAck>> {
     if no_daemonize {
         return Ok(None);
     }
+    if rbw::windows::pipe_exists(0) {
+        std::process::exit(crate::sock::ALREADY_RUNNING);
+    }
 
     let spawn = |flags| -> std::io::Result<std::process::Child> {
         let stdout = std::fs::OpenOptions::new()
