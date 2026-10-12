@@ -15,6 +15,10 @@ pub async fn getpin(
     let mut opts = tokio::process::Command::new(pinentry);
     opts.stdin(std::process::Stdio::piped())
         .stdout(std::process::Stdio::piped());
+    // The agent runs without a console, so windows would open a new console
+    // window for a console-program pinentry, next to its dialog.
+    #[cfg(windows)]
+    opts.creation_flags(crate::windows::CREATE_NO_WINDOW);
     let mut args = vec!["--timeout".into(), "0".into()];
     if let Some(tty) = environment.tty() {
         args.extend(["--ttyname".into(), tty.into()]);

@@ -83,10 +83,14 @@ struct Request {
 /// The secret typed into the dialog, or None when the dialog was closed.
 #[cfg(windows)]
 fn ask(req: &Request) -> std::io::Result<Option<String>> {
+    use std::os::windows::process::CommandExt as _;
+
     // codes are not secrets, and are easier to type when they are visible
     let mask = req.prompt.to_lowercase().contains("password");
     let out = std::process::Command::new("powershell.exe")
         .args(["-NoProfile", "-NonInteractive", "-Command", DIALOG])
+        // only the dialog should show, not a console behind it
+        .creation_flags(rbw::windows::CREATE_NO_WINDOW)
         .env("RBW_PIN_TITLE", &req.title)
         .env("RBW_PIN_DESC", &req.desc)
         .env("RBW_PIN_PROMPT", &req.prompt)

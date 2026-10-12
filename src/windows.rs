@@ -27,6 +27,10 @@ use windows_sys::Win32::System::Threading::{
     PROCESS_QUERY_LIMITED_INFORMATION,
 };
 
+/// Process creation flag: no console window for a console program.
+pub const CREATE_NO_WINDOW: u32 =
+    windows_sys::Win32::System::Threading::CREATE_NO_WINDOW;
+
 struct Handle(HANDLE);
 
 impl Drop for Handle {
