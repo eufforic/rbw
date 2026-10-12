@@ -50,6 +50,23 @@ Expect 0 'stop-agent' rbw.exe @('stop-agent') | Out-Null
 $text = Expect 1 'unlocked after stop' rbw.exe @('unlocked')
 if ($text -notmatch 'agent not running') { throw "unexpected: $text" }
 
+# Callers that capture output (scripts, agent hosts) read the pipes to the
+# end, so starting the agent must not leave them holding a pipe open.
+$psi = [Diagnostics.ProcessStartInfo]::new("$bin\rbw.exe", 'lock')
+$psi.RedirectStandardOutput = $true; $psi.RedirectStandardError = $true
+$psi.UseShellExecute = $false
+$sw = [Diagnostics.Stopwatch]::StartNew()
+$p = [Diagnostics.Process]::Start($psi)
+$stdout = $p.StandardOutput.ReadToEndAsync(); $stderr = $p.StandardError.ReadToEndAsync()
+if (-not [Threading.Tasks.Task]::WaitAll(@($stdout, $stderr), 30000)) {
+    Dump-AgentLogs
+    throw 'starting the agent left the caller''s output pipes open'
+}
+$p.WaitForExit()
+if ($p.ExitCode -ne 0) { throw "piped lock: exit $($p.ExitCode)`n$($stderr.Result)" }
+Write-Host "ok: piped output closes after starting the agent ($($sw.ElapsedMilliseconds) ms)"
+Expect 0 'stop-agent again' rbw.exe @('stop-agent') | Out-Null
+
 $text = Expect 0 'pinentry handshake' rbw-pinentry.exe $null "SETTITLE rbw`nBYE`n"
 if ($text -notmatch '(?s)^OK Pleased.*OK\s+OK closing') { throw "unexpected: $text" }
 Write-Host 'windows smoke test passed'
