@@ -1,0 +1,24 @@
+name: windows-release
+on:
+  push:
+    tags: ['windows-v*']
+permissions:
+  contents: write
+jobs:
+  release:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v3
+      - uses: dtolnay/rust-toolchain@stable
+      - run: cargo build --release --locked
+      - run: tools/windows-smoke-test.ps1
+        shell: pwsh
+      - name: publish
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $zip = "rbw-${{ github.ref_name }}-x86_64-pc-windows-msvc.zip"
+          Compress-Archive -Path target/release/rbw.exe, target/release/rbw-agent.exe, target/release/rbw-pinentry.exe -DestinationPath $zip
+          (Get-FileHash $zip -Algorithm SHA256).Hash.ToLower() + "  $zip" | Set-Content "$zip.sha256"
+          gh release create "${{ github.ref_name }}" $zip "$zip.sha256" --prerelease --title "${{ github.ref_name }}" --notes "Windows build of rbw from ${{ github.sha }}."
