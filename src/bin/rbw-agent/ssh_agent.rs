@@ -17,9 +17,11 @@ impl SshAgent {
 
     // windows ssh clients talk to a named pipe, which this does not serve yet
     #[cfg(windows)]
-    #[allow(clippy::unused_async)]
-    pub async fn run(self) -> anyhow::Result<()> {
-        Ok(())
+    pub fn run(
+        self,
+    ) -> impl std::future::Future<Output = anyhow::Result<()>> {
+        drop(self);
+        std::future::ready(Ok(()))
     }
 
     #[cfg(unix)]
