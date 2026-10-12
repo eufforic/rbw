@@ -81,9 +81,8 @@ pub fn daemonize(no_daemonize: bool) -> anyhow::Result<Option<StartupAck>> {
                 // return a special exit code to allow the cli to detect
                 // this case and not error out
                 std::process::exit(23);
-            } else {
-                panic!("failed to daemonize: {e}");
             }
+            panic!("failed to daemonize: {e}");
         }
     }
 
@@ -107,6 +106,12 @@ impl StartupAck {
 #[cfg(windows)]
 pub fn daemonize(no_daemonize: bool) -> anyhow::Result<Option<StartupAck>> {
     use std::os::windows::process::CommandExt as _;
+    use windows_sys::Win32::Foundation::{
+        SetHandleInformation, HANDLE_FLAG_INHERIT,
+    };
+    use windows_sys::Win32::System::Console::{
+        GetStdHandle, STD_ERROR_HANDLE, STD_INPUT_HANDLE, STD_OUTPUT_HANDLE,
+    };
 
     const DETACHED_PROCESS: u32 = 0x0000_0008;
     const CREATE_NEW_PROCESS_GROUP: u32 = 0x0000_0200;
@@ -117,6 +122,21 @@ pub fn daemonize(no_daemonize: bool) -> anyhow::Result<Option<StartupAck>> {
     }
     if rbw::windows::pipe_exists(0) {
         std::process::exit(crate::sock::ALREADY_RUNNING);
+    }
+
+    // CreateProcess hands every inheritable handle to the child, including
+    // the stdout and stderr pipes of whoever ran us. A caller reading those
+    // pipes to the end would then wait as long as the agent lives.
+    for std_handle in [STD_INPUT_HANDLE, STD_OUTPUT_HANDLE, STD_ERROR_HANDLE]
+    {
+        // safety: plain calls on our own standard handles
+        unsafe {
+            SetHandleInformation(
+                GetStdHandle(std_handle),
+                HANDLE_FLAG_INHERIT,
+                0,
+            );
+        }
     }
 
     let spawn = |flags| -> std::io::Result<std::process::Child> {
