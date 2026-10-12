@@ -1,34 +1,55 @@
 # Drives the agent lifecycle on windows without a bitwarden account: start,
 # reuse, refuse a second agent, stop. Run after `cargo build --release`.
 $ErrorActionPreference = 'Stop'
-$env:PATH = "$PSScriptRoot\..\target\release;$env:PATH"
+$bin = Resolve-Path "$PSScriptRoot\..\target\release"
 $env:RBW_PROFILE = 'smoke-test'
+$env:RUST_LOG = 'debug'
+$out = New-Item -ItemType Directory -Force "$env:RUNNER_TEMP\rbw-smoke"
 
-function Expect($code, $what, [scriptblock]$run) {
-    $out = & $run 2>&1 | Out-String
-    if ($LASTEXITCODE -ne $code) {
-        throw "${what}: exit $LASTEXITCODE, wanted $code`n$out"
-    }
-    Write-Host "ok: $what"
-    return $out
+function Dump-AgentLogs {
+    Get-ChildItem $env:APPDATA, $env:LOCALAPPDATA -Recurse -Filter 'agent.*' -ErrorAction SilentlyContinue |
+        Where-Object FullName -match 'smoke-test' |
+        ForEach-Object { Write-Host "--- $($_.FullName)"; Get-Content $_.FullName }
 }
 
-Expect 0 'set email' { rbw config set email rbw-smoke-test@invalid.invalid } | Out-Null
-$out = Expect 1 'unlocked before the agent runs' { rbw unlocked }
-if ($out -notmatch 'agent not running') { throw "unexpected: $out" }
+# Output goes to files, never to a pipe this script reads, so a child that
+# keeps a handle open cannot hang the step; a hung command fails it instead.
+function Expect($code, $what, $exe, $argv, $stdin) {
+    $o = "$out\out.txt"; $e = "$out\err.txt"
+    $start = @{ FilePath = "$bin\$exe"; NoNewWindow = $true; PassThru = $true
+                RedirectStandardOutput = $o; RedirectStandardError = $e }
+    if ($argv) { $start.ArgumentList = $argv }
+    if ($stdin) { Set-Content "$out\in.txt" $stdin -NoNewline; $start.RedirectStandardInput = "$out\in.txt" }
+    $sw = [Diagnostics.Stopwatch]::StartNew()
+    $p = Start-Process @start
+    if (-not $p.WaitForExit(30000)) {
+        $p.Kill(); Dump-AgentLogs
+        throw "${what}: still running after 30 s`n$(Get-Content $o -Raw)$(Get-Content $e -Raw)"
+    }
+    $text = "$(Get-Content $o -Raw)$(Get-Content $e -Raw)"
+    if ($p.ExitCode -ne $code) {
+        Dump-AgentLogs
+        throw "${what}: exit $($p.ExitCode), wanted $code`n$text"
+    }
+    Write-Host "ok: $what ($($sw.ElapsedMilliseconds) ms)"
+    return $text
+}
 
-Expect 0 'lock starts the agent' { rbw lock } | Out-Null
-$t = Measure-Command { Expect 0 'lock reuses the agent' { rbw lock } | Out-Null }
-Write-Host "second call took $([math]::Round($t.TotalMilliseconds)) ms"
-$out = Expect 1 'unlocked while locked' { rbw unlocked }
-if ($out -notmatch 'locked') { throw "unexpected: $out" }
+Expect 0 'set email' rbw.exe @('config', 'set', 'email', 'rbw-smoke-test@invalid.invalid') | Out-Null
+$text = Expect 1 'unlocked before the agent runs' rbw.exe @('unlocked')
+if ($text -notmatch 'agent not running') { throw "unexpected: $text" }
 
-Expect 23 'a second agent refuses to start' { rbw-agent } | Out-Null
+Expect 0 'lock starts the agent' rbw.exe @('lock') | Out-Null
+Expect 0 'lock reuses the agent' rbw.exe @('lock') | Out-Null
+$text = Expect 1 'unlocked while locked' rbw.exe @('unlocked')
+if ($text -notmatch 'locked') { throw "unexpected: $text" }
 
-Expect 0 'stop-agent' { rbw stop-agent } | Out-Null
-$out = Expect 1 'unlocked after stop' { rbw unlocked }
-if ($out -notmatch 'agent not running') { throw "unexpected: $out" }
+Expect 23 'a second agent refuses to start' rbw-agent.exe | Out-Null
 
-$out = Expect 0 'pinentry handshake' { "SETTITLE rbw`nBYE`n" | rbw-pinentry }
-if ($out -notmatch '(?s)^OK Pleased.*OK\s+OK closing') { throw "unexpected: $out" }
+Expect 0 'stop-agent' rbw.exe @('stop-agent') | Out-Null
+$text = Expect 1 'unlocked after stop' rbw.exe @('unlocked')
+if ($text -notmatch 'agent not running') { throw "unexpected: $text" }
+
+$text = Expect 0 'pinentry handshake' rbw-pinentry.exe $null "SETTITLE rbw`nBYE`n"
+if ($text -notmatch '(?s)^OK Pleased.*OK\s+OK closing') { throw "unexpected: $text" }
 Write-Host 'windows smoke test passed'

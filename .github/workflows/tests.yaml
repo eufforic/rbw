@@ -64,6 +64,7 @@ jobs:
       - run: cargo test --all-features
   test-windows:
     runs-on: windows-latest
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v3
       - uses: dtolnay/rust-toolchain@stable
