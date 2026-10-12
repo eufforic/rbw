@@ -119,7 +119,7 @@ fn fallback_runtime_dir() -> std::path::PathBuf {
     format!(
         "{}/{}-{}",
         std::env::temp_dir().to_string_lossy(),
-        &profile(),
+        profile(),
         rustix::process::getuid().as_raw()
     )
     .into()
