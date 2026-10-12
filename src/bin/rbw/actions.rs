@@ -1,3 +1,4 @@
+#[cfg(unix)]
 use std::{io::Read as _, os::unix::ffi::OsStringExt as _};
 
 use anyhow::Context as _;
@@ -55,19 +56,29 @@ pub fn lock() -> anyhow::Result<()> {
 pub fn quit() -> anyhow::Result<()> {
     match crate::sock::Sock::connect() {
         Ok(mut sock) => {
-            let pidfile = rbw::dirs::pid_file();
-            let mut pid = String::new();
-            std::fs::File::open(pidfile)?.read_to_string(&mut pid)?;
-            let Some(pid) =
-                rustix::process::Pid::from_raw(pid.trim_end().parse()?)
-            else {
-                anyhow::bail!("failed to read pid from pidfile");
+            #[cfg(unix)]
+            let pid = {
+                let pidfile = rbw::dirs::pid_file();
+                let mut pid = String::new();
+                std::fs::File::open(pidfile)?.read_to_string(&mut pid)?;
+                let Some(pid) =
+                    rustix::process::Pid::from_raw(pid.trim_end().parse()?)
+                else {
+                    anyhow::bail!("failed to read pid from pidfile");
+                };
+                pid
             };
             sock.send(&rbw::protocol::Request::new(
                 get_environment(),
                 rbw::protocol::Action::Quit,
             ))?;
+            #[cfg(unix)]
             wait_for_exit(pid);
+            #[cfg(windows)]
+            {
+                drop(sock);
+                wait_for_pipe_gone();
+            }
             Ok(())
         }
         Err(e) => match e.kind() {
@@ -178,6 +189,19 @@ fn connect() -> anyhow::Result<crate::sock::Sock> {
     })
 }
 
+// a new agent cannot claim the pipe until the old one has let it go, which
+// is the only part of exiting the caller depends on
+#[cfg(windows)]
+fn wait_for_pipe_gone() {
+    for _ in 0..500 {
+        if !rbw::windows::pipe_exists(0) {
+            break;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(10));
+    }
+}
+
+#[cfg(unix)]
 fn wait_for_exit(pid: rustix::process::Pid) {
     loop {
         if rustix::process::test_kill_process(pid).is_err() {
@@ -188,7 +212,9 @@ fn wait_for_exit(pid: rustix::process::Pid) {
 }
 
 fn get_environment() -> rbw::protocol::Environment {
-    let tty = std::env::var_os("RBW_TTY").or_else(|| {
+    let tty = std::env::var_os("RBW_TTY");
+    #[cfg(unix)]
+    let tty = tty.or_else(|| {
         rustix::termios::ttyname(std::io::stdin(), vec![])
             .ok()
             .map(|p| std::ffi::OsString::from_vec(p.as_bytes().to_vec()))

@@ -1,4 +1,31 @@
+#[cfg(unix)]
 use std::os::unix::ffi::{OsStrExt as _, OsStringExt as _};
+
+#[cfg(unix)]
+fn os_to_bytes(s: &std::ffi::OsStr) -> Vec<u8> {
+    s.as_bytes().to_vec()
+}
+
+#[cfg(unix)]
+fn os_from_bytes(b: Vec<u8>) -> std::ffi::OsString {
+    std::ffi::OsString::from_vec(b)
+}
+
+// windows strings are UTF-16, so arbitrary bytes have no faithful mapping;
+// everything rbw sends this way (tty names, env vars) is text anyway
+#[cfg(windows)]
+fn os_to_bytes(s: &std::ffi::OsStr) -> Vec<u8> {
+    s.to_string_lossy().into_owned().into_bytes()
+}
+
+#[cfg(windows)]
+fn os_from_bytes(b: Vec<u8>) -> std::ffi::OsString {
+    String::from_utf8(b)
+        .unwrap_or_else(|e| {
+            String::from_utf8_lossy(e.as_bytes()).into_owned()
+        })
+        .into()
+}
 
 pub const VERSION: u32 = {
     const fn unwrap(res: &Result<u32, std::num::ParseIntError>) -> u32 {
@@ -90,7 +117,7 @@ impl serde::Serialize for SerializableOsString {
     where
         S: serde::Serializer,
     {
-        serializer.serialize_str(&crate::base64::encode(self.0.as_bytes()))
+        serializer.serialize_str(&crate::base64::encode(os_to_bytes(&self.0)))
     }
 }
 
@@ -115,7 +142,7 @@ impl<'de> serde::Deserialize<'de> for SerializableOsString {
             where
                 E: serde::de::Error,
             {
-                Ok(SerializableOsString(std::ffi::OsString::from_vec(
+                Ok(SerializableOsString(os_from_bytes(
                     crate::base64::decode(s).map_err(|_| {
                         E::invalid_value(serde::de::Unexpected::Str(s), &self)
                     })?,

@@ -1,5 +1,6 @@
 use crate::prelude::*;
 
+#[cfg(unix)]
 use std::os::unix::fs::{DirBuilderExt as _, PermissionsExt as _};
 
 pub fn make_all() -> Result<()> {
@@ -10,6 +11,7 @@ pub fn make_all() -> Result<()> {
     Ok(())
 }
 
+#[cfg(unix)]
 fn create_dir_all_with_permissions(
     path: &std::path::Path,
     mode: u32,
@@ -34,6 +36,19 @@ fn create_dir_all_with_permissions(
     Ok(())
 }
 
+// The per-user profile directories windows hands out are already private to
+// that user, so there are no permissions to tighten.
+#[cfg(windows)]
+fn create_dir_all_with_permissions(
+    path: &std::path::Path,
+    _mode: u32,
+) -> Result<()> {
+    std::fs::create_dir_all(path).map_err(|source| Error::CreateDirectory {
+        source,
+        file: path.to_path_buf(),
+    })
+}
+
 pub fn config_file() -> std::path::PathBuf {
     config_dir().join("config.json")
 }
@@ -44,7 +59,9 @@ pub fn db_file(server: &str, email: &str) -> std::path::PathBuf {
     let server =
         percent_encoding::percent_encode(server.as_bytes(), INVALID_PATH)
             .to_string();
-    cache_dir().join(format!("{server}:{email}.json"))
+    // ':' is not allowed in windows file names
+    let sep = if cfg!(windows) { "_" } else { ":" };
+    cache_dir().join(format!("{server}{sep}{email}.json"))
 }
 
 pub fn pid_file() -> std::path::PathBuf {
@@ -92,18 +109,26 @@ fn data_dir() -> std::path::PathBuf {
 fn runtime_dir() -> std::path::PathBuf {
     let project_dirs =
         directories::ProjectDirs::from("", "", &profile()).unwrap();
-    project_dirs.runtime_dir().map_or_else(
-        || {
-            format!(
-                "{}/{}-{}",
-                std::env::temp_dir().to_string_lossy(),
-                &profile(),
-                rustix::process::getuid().as_raw()
-            )
-            .into()
-        },
-        std::path::Path::to_path_buf,
+    project_dirs
+        .runtime_dir()
+        .map_or_else(fallback_runtime_dir, std::path::Path::to_path_buf)
+}
+
+#[cfg(unix)]
+fn fallback_runtime_dir() -> std::path::PathBuf {
+    format!(
+        "{}/{}-{}",
+        std::env::temp_dir().to_string_lossy(),
+        &profile(),
+        rustix::process::getuid().as_raw()
     )
+    .into()
+}
+
+// the windows temp dir is already per-user
+#[cfg(windows)]
+fn fallback_runtime_dir() -> std::path::PathBuf {
+    std::env::temp_dir().join(profile())
 }
 
 pub fn profile() -> String {

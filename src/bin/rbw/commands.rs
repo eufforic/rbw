@@ -1,4 +1,4 @@
-use std::{fmt::Write as _, io::Write as _, os::unix::ffi::OsStrExt as _};
+use std::{fmt::Write as _, io::Write as _};
 
 use anyhow::Context as _;
 
@@ -1968,7 +1968,7 @@ fn run_agent() -> anyhow::Result<()> {
     let agent_path = std::env::var_os("RBW_AGENT");
     let agent_path = agent_path
         .as_deref()
-        .unwrap_or_else(|| std::ffi::OsStr::from_bytes(b"rbw-agent"));
+        .unwrap_or_else(|| std::ffi::OsStr::new("rbw-agent"));
     let status = std::process::Command::new(agent_path)
         .status()
         .context("failed to run rbw-agent")?;

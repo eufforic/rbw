@@ -15,6 +15,14 @@ impl SshAgent {
         Self { state }
     }
 
+    // windows ssh clients talk to a named pipe, which this does not serve yet
+    #[cfg(windows)]
+    #[allow(clippy::unused_async)]
+    pub async fn run(self) -> anyhow::Result<()> {
+        Ok(())
+    }
+
+    #[cfg(unix)]
     pub async fn run(self) -> anyhow::Result<()> {
         let socket = rbw::dirs::ssh_agent_socket_file();
 

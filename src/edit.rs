@@ -16,7 +16,14 @@ pub fn edit(contents: &str, help: &str) -> Result<String> {
     let mut var = "VISUAL";
     let editor = std::env::var_os(var).unwrap_or_else(|| {
         var = "EDITOR";
-        std::env::var_os(var).unwrap_or_else(|| "/usr/bin/vim".into())
+        std::env::var_os(var).unwrap_or_else(|| {
+            if cfg!(windows) {
+                "notepad.exe"
+            } else {
+                "/usr/bin/vim"
+            }
+            .into()
+        })
     });
 
     let dir = tempfile::tempdir().unwrap();

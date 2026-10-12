@@ -22,10 +22,10 @@ impl Agent {
 
     pub async fn run(
         self,
-        listener: tokio::net::UnixListener,
+        listener: crate::sock::Listener,
     ) -> anyhow::Result<()> {
         pub enum Event {
-            Request(std::io::Result<tokio::net::UnixStream>),
+            Request(std::io::Result<crate::sock::Stream>),
             Timeout(()),
             Sync(()),
         }
@@ -48,9 +48,7 @@ impl Agent {
             .boxed();
 
         let mut stream = futures_util::stream::select_all([
-            tokio_stream::wrappers::UnixListenerStream::new(listener)
-                .map(Event::Request)
-                .boxed(),
+            crate::sock::incoming(listener).map(Event::Request).boxed(),
             tokio_stream::wrappers::UnboundedReceiverStream::new(
                 self.timer_r,
             )
