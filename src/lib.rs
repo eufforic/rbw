@@ -14,4 +14,6 @@ pub mod pinentry;
 mod prelude;
 pub mod protocol;
 pub mod pwgen;
+#[cfg(windows)]
+pub mod windows;
 pub mod wordlist;

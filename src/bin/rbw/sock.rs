@@ -2,15 +2,24 @@ use std::io::{BufRead as _, Write as _};
 
 use anyhow::Context as _;
 
+#[cfg(unix)]
 pub struct Sock(std::os::unix::net::UnixStream);
+#[cfg(windows)]
+pub struct Sock(std::fs::File);
 
 impl Sock {
     // not returning anyhow::Result here because we want to be able to handle
     // specific kinds of std::io::Results differently
+    #[cfg(unix)]
     pub fn connect() -> std::io::Result<Self> {
         Ok(Self(std::os::unix::net::UnixStream::connect(
             rbw::dirs::socket_file(),
         )?))
+    }
+
+    #[cfg(windows)]
+    pub fn connect() -> std::io::Result<Self> {
+        Ok(Self(rbw::windows::connect()?))
     }
 
     pub fn send(

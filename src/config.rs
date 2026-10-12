@@ -51,7 +51,12 @@ pub fn default_sync_interval() -> u64 {
 }
 
 pub fn default_pinentry() -> String {
-    "pinentry".to_string()
+    if cfg!(windows) {
+        "rbw-pinentry"
+    } else {
+        "pinentry"
+    }
+    .to_string()
 }
 
 impl Config {
